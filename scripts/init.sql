@@ -1,3 +1,13 @@
+-- Create users table first (required by other tables)
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(60) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    is_active BOOLEAN DEFAULT true
+);
+
 -- Create the main logs table with partitioning
 CREATE TABLE logs (
     id BIGSERIAL,
@@ -8,7 +18,8 @@ CREATE TABLE logs (
     service VARCHAR(255),
     fields JSONB,
     raw_message TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    user_id INTEGER REFERENCES users(id)
 ) PARTITION BY RANGE (timestamp);
 
 -- Create initial partitions for current and next month
@@ -79,6 +90,16 @@ CREATE TABLE system_metrics (
     metric_type VARCHAR(50), -- counter, gauge, histogram
     labels JSONB,
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE api_keys (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    api_key TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_used_at TIMESTAMPTZ,
+    is_active BOOLEAN DEFAULT true
 );
 
 -- Insert some sample alert rules
