@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database - Stores all log data
+  postgres:
+    image: postgres:15-alpine
+    container_name: log-analytics-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: logs
+      POSTGRES_USER: loguser
+      POSTGRES_PASSWORD: logpass123
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./scripts/create-indexes.sql:/docker-entrypoint-initdb.d/02-indexes.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loguser -d logs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - log-network
+
+  # Redis - Message queue and caching
+  redis:
+    image: redis:7-alpine
+    container_name: log-analytics-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - log-network
+
+  # Adminer - Database management interface (optional, for development)
+  adminer:
+    image: adminer:latest
+    container_name: log-analytics-adminer
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    depends_on:
+      - postgres
+    networks:
+      - log-network
+    profiles:
+      - dev-tools
+
+  # Redis Commander - Redis management interface (optional, for development)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: log-analytics-redis-ui
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8091:8081"
+    depends_on:
+      - redis
+    networks:
+      - log-network
+    profiles:
+      - dev-tools
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  log-network:
+    driver: bridge
