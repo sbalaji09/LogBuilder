@@ -1,13 +1,3 @@
--- Create users table first (required by other tables)
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(60) UNIQUE NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    is_active BOOLEAN DEFAULT true
-);
-
 -- Create the main logs table with partitioning
 CREATE TABLE logs (
     id BIGSERIAL,
@@ -92,16 +82,6 @@ CREATE TABLE system_metrics (
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE api_keys (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id),
-    api_key TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    last_used_at TIMESTAMPTZ,
-    is_active BOOLEAN DEFAULT true
-);
-
 -- Insert some sample alert rules
 INSERT INTO alert_rules (name, description, condition_query, threshold_value, threshold_operator, time_window_minutes, notification_channels) VALUES
 ('High Error Rate', 'Alert when error rate exceeds 5% in 10 minutes', 
@@ -160,3 +140,42 @@ BEGIN
                    partition_name, partition_name);
 END;
 $$ LANGUAGE plpgsql;
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    is_active BOOLEAN DEFAULT true
+);
+
+-- API keys table  
+CREATE TABLE api_keys (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    api_key VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_used_at TIMESTAMPTZ,
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Add user_id to logs table
+ALTER TABLE logs ADD COLUMN user_id INTEGER REFERENCES users(id);
+
+-- Indexes for performance
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_api_keys_key ON api_keys(api_key);
+CREATE INDEX idx_api_keys_user_id ON api_keys(user_id);
+CREATE INDEX idx_logs_user_id ON logs(user_id);
+
+-- Insert a test user (password is "password123" hashed with bcrypt)
+INSERT INTO users (username, email, password_hash) VALUES
+('testuser', 'test@example.com', '$2a$10$rOCVDAP8UQ0ZO8t3Zj7X9uGBX8XZKYtHjNlNwGXaQ9dLm1VaHnZ3K');
+
+-- Insert a test API key for the test user
+INSERT INTO api_keys (user_id, api_key, name) VALUES
+(1, 'test_api_key_12345', 'Development API Key');
