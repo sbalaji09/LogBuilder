@@ -55,13 +55,17 @@ func (s *PostgresStorage) InsertLog(log *models.LogEntry) error {
     `
 
 	// Convert fields map to JSON
-	var fieldsJSON []byte
+	var fieldsJSON interface{}
 	var err error
 	if log.Fields != nil {
-		fieldsJSON, err = json.Marshal(log.Fields)
+		var jsonBytes []byte
+		jsonBytes, err = json.Marshal(log.Fields)
 		if err != nil {
 			return fmt.Errorf("failed to marshal fields: %w", err)
 		}
+		fieldsJSON = jsonBytes
+	} else {
+		fieldsJSON = nil
 	}
 
 	err = s.db.QueryRow(
@@ -94,7 +98,11 @@ func (s *PostgresStorage) InsertLogs(logs []*models.LogEntry) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
 
 	query := `
         INSERT INTO logs (timestamp, source, level, message, service, fields, raw_message, created_at)
@@ -108,12 +116,16 @@ func (s *PostgresStorage) InsertLogs(logs []*models.LogEntry) error {
 	defer stmt.Close()
 
 	for _, log := range logs {
-		var fieldsJSON []byte
+		var fieldsJSON interface{}
 		if log.Fields != nil {
-			fieldsJSON, err = json.Marshal(log.Fields)
+			var jsonBytes []byte
+			jsonBytes, err = json.Marshal(log.Fields)
 			if err != nil {
 				return fmt.Errorf("failed to marshal fields: %w", err)
 			}
+			fieldsJSON = jsonBytes
+		} else {
+			fieldsJSON = nil
 		}
 
 		_, err = stmt.Exec(
