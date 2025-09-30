@@ -24,6 +24,7 @@ type LogEntry struct {
 	Fields     map[string]string `json:"fields,omitempty" db:"fields"`
 	RawMessage string            `json:"raw_message,omitempty" db:"raw_message"`
 	CreatedAt  time.Time         `json:"created_at" db:"created_at"`
+	UserID     int               `json:"user_id" db:"user_id"` // NEW FIELD
 }
 
 // incoming log data

@@ -9,23 +9,24 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/sbalaji09/LogBuilder/log_analytics_engine/internal/auth"
 	"github.com/sbalaji09/LogBuilder/log_analytics_engine/internal/config"
+	"github.com/sbalaji09/LogBuilder/log_analytics_engine/internal/handlers"
 	"github.com/sbalaji09/LogBuilder/log_analytics_engine/internal/models"
 	"github.com/sbalaji09/LogBuilder/log_analytics_engine/internal/storage"
 	"github.com/sirupsen/logrus"
 )
 
-/*
-main entry point and API server for the log ingestion service, using Gin
-*/
-
 type IngestionService struct {
-	storage *storage.PostgresStorage
-	logger  *logrus.Logger
-	config  *config.Config
+	storage     *storage.PostgresStorage
+	authStorage *storage.AuthStorage
+	authHandler *handlers.AuthHandler
+	jwtService  *auth.JWTService
+	logger      *logrus.Logger
+	config      *config.Config
 }
 
-// creates an IngestionService, sets up logging with a specified log level, and connects to the database
 func NewIngestionService(cfg *config.Config) (*IngestionService, error) {
 	logger := logrus.New()
 
@@ -37,24 +38,35 @@ func NewIngestionService(cfg *config.Config) (*IngestionService, error) {
 	logger.SetLevel(level)
 
 	// Connect to database
-	storage, err := storage.NewPostgresStorage(cfg.DatabaseURL)
+	pgStorage, err := storage.NewPostgresStorage(cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}
 
+	// Create auth storage
+	authStorage := storage.NewAuthStorage(pgStorage.GetDB())
+
+	// Create JWT service
+	jwtService := auth.NewJWTService(cfg.JWTSecret, cfg.JWTIssuer)
+
+	// Create auth handler
+	authHandler := handlers.NewAuthHandler(authStorage, jwtService, logger)
+
 	return &IngestionService{
-		storage: storage,
-		logger:  logger,
-		config:  cfg,
+		storage:     pgStorage,
+		authStorage: authStorage,
+		authHandler: authHandler,
+		jwtService:  jwtService,
+		logger:      logger,
+		config:      cfg,
 	}, nil
 }
 
-// closes the database connection when the service shuts down
 func (s *IngestionService) Close() error {
 	return s.storage.Close()
 }
 
-// function responds with JSON showing service status and timestamp for health monitoring
+// Health check endpoint
 func (s *IngestionService) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "healthy",
@@ -63,8 +75,18 @@ func (s *IngestionService) HealthCheck(c *gin.Context) {
 	})
 }
 
-// accepts a single log as JSON, validates it, converts it to the standard log model, and stores it within the database
+// Ingest a single log entry (now requires API key)
 func (s *IngestionService) IngestLog(c *gin.Context) {
+	// Get user_id from context (set by API key middleware)
+	userID, exists := c.Get("user_id")
+	if !exists {
+		s.logger.Error("User ID not found in context")
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Authentication required",
+		})
+		return
+	}
+
 	var req models.IngestRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -88,6 +110,7 @@ func (s *IngestionService) IngestLog(c *gin.Context) {
 
 	// Convert to log entry
 	logEntry := req.ToLogEntry()
+	logEntry.UserID = userID.(int) // Associate log with user
 
 	// Store in database
 	if err := s.storage.InsertLog(logEntry); err != nil {
@@ -99,6 +122,7 @@ func (s *IngestionService) IngestLog(c *gin.Context) {
 	}
 
 	s.logger.WithFields(logrus.Fields{
+		"user_id": userID,
 		"source":  logEntry.Source,
 		"level":   logEntry.Level,
 		"service": logEntry.Service,
@@ -111,9 +135,18 @@ func (s *IngestionService) IngestLog(c *gin.Context) {
 	})
 }
 
-// accepts an array of log entries, validates each, reports individual validation errors,
-// and inserts all valid logs in a single transaction
+// Ingest multiple log entries (now requires API key)
 func (s *IngestionService) IngestBatch(c *gin.Context) {
+	// Get user_id from context
+	userID, exists := c.Get("user_id")
+	if !exists {
+		s.logger.Error("User ID not found in context")
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Authentication required",
+		})
+		return
+	}
+
 	var req models.BatchIngestRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -147,7 +180,9 @@ func (s *IngestionService) IngestBatch(c *gin.Context) {
 			validationErrors = append(validationErrors, fmt.Sprintf("Log %d: %s", i, err.Error()))
 			continue
 		}
-		logEntries = append(logEntries, logReq.ToLogEntry())
+		entry := logReq.ToLogEntry()
+		entry.UserID = userID.(int) // Associate each log with user
+		logEntries = append(logEntries, entry)
 	}
 
 	if len(validationErrors) > 0 {
@@ -167,7 +202,10 @@ func (s *IngestionService) IngestBatch(c *gin.Context) {
 		return
 	}
 
-	s.logger.WithField("count", len(logEntries)).Info("Batch logs ingested successfully")
+	s.logger.WithFields(logrus.Fields{
+		"user_id": userID,
+		"count":   len(logEntries),
+	}).Info("Batch logs ingested successfully")
 
 	c.JSON(http.StatusCreated, gin.H{
 		"status":       "accepted",
@@ -176,9 +214,17 @@ func (s *IngestionService) IngestBatch(c *gin.Context) {
 	})
 }
 
-// retrieves recent logs for inspection or testing purposes, responds with the logs and their count
+// Get recent logs for the authenticated user
 func (s *IngestionService) GetRecentLogs(c *gin.Context) {
-	logs, err := s.storage.GetRecentLogs(50)
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "Authentication required",
+		})
+		return
+	}
+
+	logs, err := s.storage.GetRecentLogsByUser(userID.(int), 50)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to retrieve logs")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -203,7 +249,7 @@ func setupRouter(service *IngestionService) *gin.Engine {
 	// CORS middleware for development
 	router.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if c.Request.Method == "OPTIONS" {
@@ -214,19 +260,35 @@ func setupRouter(service *IngestionService) *gin.Engine {
 		c.Next()
 	})
 
-	// API routes
-	v1 := router.Group("/api/v1")
+	// Public routes (no authentication required)
+	public := router.Group("/api/v1")
 	{
-		v1.GET("/health", service.HealthCheck)
-		v1.POST("/logs/ingest", service.IngestLog)
-		v1.POST("/logs/batch", service.IngestBatch)
-		v1.GET("/logs/recent", service.GetRecentLogs) // For testing
+		public.GET("/health", service.HealthCheck)
+		public.POST("/auth/register", service.authHandler.Register)
+		public.POST("/auth/login", service.authHandler.Login)
+	}
+
+	// Protected routes (require JWT token for web interface)
+	protected := router.Group("/api/v1")
+	protected.Use(service.authHandler.JWTAuthMiddleware())
+	{
+		protected.POST("/api-keys", service.authHandler.CreateAPIKey)
+		protected.GET("/api-keys", service.authHandler.GetAPIKeys)
+		protected.DELETE("/api-keys/:id", service.authHandler.DeleteAPIKey)
+	}
+
+	// Log ingestion routes (require API key)
+	logs := router.Group("/api/v1/logs")
+	logs.Use(service.authHandler.APIKeyAuthMiddleware())
+	{
+		logs.POST("/ingest", service.IngestLog)
+		logs.POST("/batch", service.IngestBatch)
+		logs.GET("/recent", service.GetRecentLogs)
 	}
 
 	return router
 }
 
-// loads configuration, initializes services, sets up routing, starts the HTTP server, and handles shutdown signals
 func main() {
 	// Load configuration
 	cfg := config.Load()

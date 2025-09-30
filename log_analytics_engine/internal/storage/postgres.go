@@ -49,23 +49,19 @@ func (s *PostgresStorage) Close() error {
 // stores a single log entry in the database
 func (s *PostgresStorage) InsertLog(log *models.LogEntry) error {
 	query := `
-        INSERT INTO logs (timestamp, source, level, message, service, fields, raw_message, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO logs (timestamp, source, level, message, service, fields, raw_message, created_at, user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id
     `
 
 	// Convert fields map to JSON
-	var fieldsJSON interface{}
+	var fieldsJSON []byte
 	var err error
 	if log.Fields != nil {
-		var jsonBytes []byte
-		jsonBytes, err = json.Marshal(log.Fields)
+		fieldsJSON, err = json.Marshal(log.Fields)
 		if err != nil {
 			return fmt.Errorf("failed to marshal fields: %w", err)
 		}
-		fieldsJSON = jsonBytes
-	} else {
-		fieldsJSON = nil
 	}
 
 	err = s.db.QueryRow(
@@ -78,6 +74,7 @@ func (s *PostgresStorage) InsertLog(log *models.LogEntry) error {
 		fieldsJSON,
 		log.RawMessage,
 		log.CreatedAt,
+		log.UserID,
 	).Scan(&log.ID)
 
 	if err != nil {
@@ -98,15 +95,11 @@ func (s *PostgresStorage) InsertLogs(logs []*models.LogEntry) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
 	query := `
-        INSERT INTO logs (timestamp, source, level, message, service, fields, raw_message, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO logs (timestamp, source, level, message, service, fields, raw_message, created_at, user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     `
 
 	stmt, err := tx.Prepare(query)
@@ -116,16 +109,12 @@ func (s *PostgresStorage) InsertLogs(logs []*models.LogEntry) error {
 	defer stmt.Close()
 
 	for _, log := range logs {
-		var fieldsJSON interface{}
+		var fieldsJSON []byte
 		if log.Fields != nil {
-			var jsonBytes []byte
-			jsonBytes, err = json.Marshal(log.Fields)
+			fieldsJSON, err = json.Marshal(log.Fields)
 			if err != nil {
 				return fmt.Errorf("failed to marshal fields: %w", err)
 			}
-			fieldsJSON = jsonBytes
-		} else {
-			fieldsJSON = nil
 		}
 
 		_, err = stmt.Exec(
@@ -137,6 +126,7 @@ func (s *PostgresStorage) InsertLogs(logs []*models.LogEntry) error {
 			fieldsJSON,
 			log.RawMessage,
 			log.CreatedAt,
+			log.UserID,
 		)
 		if err != nil {
 			s.logger.WithError(err).Error("Failed to execute insert")
@@ -182,6 +172,63 @@ func (s *PostgresStorage) GetRecentLogs(limit int) ([]*models.LogEntry, error) {
 			&fieldsJSON,
 			&log.RawMessage,
 			&log.CreatedAt,
+		)
+		if err != nil {
+			s.logger.WithError(err).Error("Failed to scan log row")
+			continue
+		}
+
+		// Unmarshal fields JSON
+		if len(fieldsJSON) > 0 {
+			err = json.Unmarshal(fieldsJSON, &log.Fields)
+			if err != nil {
+				s.logger.WithError(err).Error("Failed to unmarshal fields")
+			}
+		}
+
+		logs = append(logs, log)
+	}
+
+	return logs, nil
+}
+
+// GetDB exposes the database connection for auth storage
+func (s *PostgresStorage) GetDB() *sql.DB {
+	return s.db
+}
+
+// GetRecentLogsByUser retrieves recent log entries for a specific user
+func (s *PostgresStorage) GetRecentLogsByUser(userID int, limit int) ([]*models.LogEntry, error) {
+	query := `
+        SELECT id, timestamp, source, level, message, service, fields, raw_message, created_at, user_id
+        FROM logs
+        WHERE user_id = $1
+        ORDER BY timestamp DESC
+        LIMIT $2
+    `
+
+	rows, err := s.db.Query(query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query logs: %w", err)
+	}
+	defer rows.Close()
+
+	var logs []*models.LogEntry
+	for rows.Next() {
+		log := &models.LogEntry{}
+		var fieldsJSON []byte
+
+		err := rows.Scan(
+			&log.ID,
+			&log.Timestamp,
+			&log.Source,
+			&log.Level,
+			&log.Message,
+			&log.Service,
+			&fieldsJSON,
+			&log.RawMessage,
+			&log.CreatedAt,
+			&log.UserID,
 		)
 		if err != nil {
 			s.logger.WithError(err).Error("Failed to scan log row")

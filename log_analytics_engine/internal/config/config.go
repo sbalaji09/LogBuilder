@@ -15,6 +15,8 @@ type Config struct {
 	ServerPort  string
 	LogLevel    string
 	Environment string
+	JWTSecret   string
+	JWTIssuer   string
 }
 
 // creates a new Config object, using getEnv to check if the environment variable exists
@@ -24,6 +26,8 @@ func Load() *Config {
 		ServerPort:  getEnv("SERVER_PORT", "8080"),
 		LogLevel:    getEnv("LOG_LEVEL", "info"),
 		Environment: getEnv("ENVIRONMENT", "development"),
+		JWTSecret:   getEnv("JWT_SECRET", "your-secret-key-change-this-in-production"),
+		JWTIssuer:   getEnv("JWT_ISSUER", "log-analytics-engine"),
 	}
 }
 
