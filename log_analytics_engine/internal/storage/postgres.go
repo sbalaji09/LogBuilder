@@ -55,13 +55,15 @@ func (s *PostgresStorage) InsertLog(log *models.LogEntry) error {
     `
 
 	// Convert fields map to JSON
-	var fieldsJSON []byte
+	var fieldsJSON interface{}
 	var err error
-	if log.Fields != nil {
+	if log.Fields != nil && len(log.Fields) > 0 {
 		fieldsJSON, err = json.Marshal(log.Fields)
 		if err != nil {
 			return fmt.Errorf("failed to marshal fields: %w", err)
 		}
+	} else {
+		fieldsJSON = nil
 	}
 
 	err = s.db.QueryRow(
@@ -109,12 +111,14 @@ func (s *PostgresStorage) InsertLogs(logs []*models.LogEntry) error {
 	defer stmt.Close()
 
 	for _, log := range logs {
-		var fieldsJSON []byte
-		if log.Fields != nil {
+		var fieldsJSON interface{}
+		if log.Fields != nil && len(log.Fields) > 0 {
 			fieldsJSON, err = json.Marshal(log.Fields)
 			if err != nil {
 				return fmt.Errorf("failed to marshal fields: %w", err)
 			}
+		} else {
+			fieldsJSON = nil
 		}
 
 		_, err = stmt.Exec(

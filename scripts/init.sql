@@ -1,3 +1,25 @@
+-- Create users table first (referenced by logs table)
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    is_active BOOLEAN DEFAULT true
+);
+
+-- API keys table
+CREATE TABLE api_keys (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    api_key VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_used_at TIMESTAMPTZ,
+    is_active BOOLEAN DEFAULT true
+);
+
 -- Create the main logs table with partitioning
 CREATE TABLE logs (
     id BIGSERIAL,
@@ -31,6 +53,43 @@ CREATE TABLE logs_2024_05 PARTITION OF logs
 
 CREATE TABLE logs_2024_06 PARTITION OF logs
     FOR VALUES FROM ('2024-06-01') TO ('2024-07-01');
+
+-- 2025 partitions
+CREATE TABLE logs_2025_01 PARTITION OF logs
+    FOR VALUES FROM ('2025-01-01') TO ('2025-02-01');
+
+CREATE TABLE logs_2025_02 PARTITION OF logs
+    FOR VALUES FROM ('2025-02-01') TO ('2025-03-01');
+
+CREATE TABLE logs_2025_03 PARTITION OF logs
+    FOR VALUES FROM ('2025-03-01') TO ('2025-04-01');
+
+CREATE TABLE logs_2025_04 PARTITION OF logs
+    FOR VALUES FROM ('2025-04-01') TO ('2025-05-01');
+
+CREATE TABLE logs_2025_05 PARTITION OF logs
+    FOR VALUES FROM ('2025-05-01') TO ('2025-06-01');
+
+CREATE TABLE logs_2025_06 PARTITION OF logs
+    FOR VALUES FROM ('2025-06-01') TO ('2025-07-01');
+
+CREATE TABLE logs_2025_07 PARTITION OF logs
+    FOR VALUES FROM ('2025-07-01') TO ('2025-08-01');
+
+CREATE TABLE logs_2025_08 PARTITION OF logs
+    FOR VALUES FROM ('2025-08-01') TO ('2025-09-01');
+
+CREATE TABLE logs_2025_09 PARTITION OF logs
+    FOR VALUES FROM ('2025-09-01') TO ('2025-10-01');
+
+CREATE TABLE logs_2025_10 PARTITION OF logs
+    FOR VALUES FROM ('2025-10-01') TO ('2025-11-01');
+
+CREATE TABLE logs_2025_11 PARTITION OF logs
+    FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
+
+CREATE TABLE logs_2025_12 PARTITION OF logs
+    FOR VALUES FROM ('2025-12-01') TO ('2026-01-01');
 
 -- Create table for storing alert rules
 CREATE TABLE alert_rules (
@@ -140,30 +199,6 @@ BEGIN
                    partition_name, partition_name);
 END;
 $$ LANGUAGE plpgsql;
-
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(255) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    is_active BOOLEAN DEFAULT true
-);
-
--- API keys table  
-CREATE TABLE api_keys (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    api_key VARCHAR(255) UNIQUE NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    last_used_at TIMESTAMPTZ,
-    is_active BOOLEAN DEFAULT true
-);
-
--- Add user_id to logs table
-ALTER TABLE logs ADD COLUMN user_id INTEGER REFERENCES users(id);
 
 -- Indexes for performance
 CREATE INDEX idx_users_username ON users(username);
