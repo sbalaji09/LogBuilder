@@ -252,3 +252,75 @@ func (s *PostgresStorage) GetRecentLogsByUser(userID int, limit int) ([]*models.
 
 	return logs, nil
 }
+
+// QueryLogs executes a filtered query on logs with pagination
+func (s *PostgresStorage) QueryLogs(userID int, whereClause string, args []interface{}, sortBy, sortOrder string, limit, offset int) ([]*models.LogEntry, error) {
+	query := fmt.Sprintf(`
+        SELECT id, timestamp, source, level, message, service, fields, raw_message, created_at, user_id
+        FROM logs
+        WHERE %s
+        ORDER BY %s %s
+        LIMIT $%d OFFSET $%d
+    `, whereClause, sortBy, sortOrder, len(args)+1, len(args)+2)
+
+	// Add limit and offset to args
+	args = append(args, limit, offset)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query logs: %w", err)
+	}
+	defer rows.Close()
+
+	var logs []*models.LogEntry
+	for rows.Next() {
+		log := &models.LogEntry{}
+		var fieldsJSON []byte
+
+		err := rows.Scan(
+			&log.ID,
+			&log.Timestamp,
+			&log.Source,
+			&log.Level,
+			&log.Message,
+			&log.Service,
+			&fieldsJSON,
+			&log.RawMessage,
+			&log.CreatedAt,
+			&log.UserID,
+		)
+		if err != nil {
+			s.logger.WithError(err).Error("Failed to scan log row")
+			continue
+		}
+
+		// Unmarshal fields JSON
+		if len(fieldsJSON) > 0 {
+			err = json.Unmarshal(fieldsJSON, &log.Fields)
+			if err != nil {
+				s.logger.WithError(err).Error("Failed to unmarshal fields")
+			}
+		}
+
+		logs = append(logs, log)
+	}
+
+	return logs, nil
+}
+
+// CountLogs counts the total number of logs matching the query
+func (s *PostgresStorage) CountLogs(userID int, whereClause string, args []interface{}) (int, error) {
+	query := fmt.Sprintf(`
+        SELECT COUNT(*)
+        FROM logs
+        WHERE %s
+    `, whereClause)
+
+	var count int
+	err := s.db.QueryRow(query, args...).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count logs: %w", err)
+	}
+
+	return count, nil
+}

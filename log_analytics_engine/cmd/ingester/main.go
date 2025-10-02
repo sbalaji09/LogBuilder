@@ -19,13 +19,14 @@ import (
 )
 
 type IngestionService struct {
-	storage     *storage.PostgresStorage
-	redisClient *storage.RedisClient
-	authStorage *storage.AuthStorage
-	authHandler *handlers.AuthHandler
-	jwtService  *auth.JWTService
-	logger      *logrus.Logger
-	config      *config.Config
+	storage      *storage.PostgresStorage
+	redisClient  *storage.RedisClient
+	authStorage  *storage.AuthStorage
+	authHandler  *handlers.AuthHandler
+	queryHandler *handlers.QueryHandler
+	jwtService   *auth.JWTService
+	logger       *logrus.Logger
+	config       *config.Config
 }
 
 func NewIngestionService(cfg *config.Config) (*IngestionService, error) {
@@ -59,14 +60,18 @@ func NewIngestionService(cfg *config.Config) (*IngestionService, error) {
 	// Create auth handler
 	authHandler := handlers.NewAuthHandler(authStorage, redisClient, jwtService, logger)
 
+	// Create query handler
+	queryHandler := handlers.NewQueryHandler(pgStorage, logger)
+
 	return &IngestionService{
-		storage:     pgStorage,
-		redisClient: redisClient,
-		authStorage: authStorage,
-		authHandler: authHandler,
-		jwtService:  jwtService,
-		logger:      logger,
-		config:      cfg,
+		storage:      pgStorage,
+		redisClient:  redisClient,
+		authStorage:  authStorage,
+		authHandler:  authHandler,
+		queryHandler: queryHandler,
+		jwtService:   jwtService,
+		logger:       logger,
+		config:       cfg,
 	}, nil
 }
 
@@ -337,6 +342,7 @@ func setupRouter(service *IngestionService) *gin.Engine {
 		logs.POST("/ingest", service.IngestLog)
 		logs.POST("/batch", service.IngestBatch)
 		logs.GET("/recent", service.GetRecentLogs)
+		logs.POST("/query", service.queryHandler.QueryLogs)
 	}
 
 	return router
