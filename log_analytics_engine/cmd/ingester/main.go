@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/sbalaji09/LogBuilder/log_analytics_engine/internal/auth"
 	"github.com/sbalaji09/LogBuilder/log_analytics_engine/internal/config"
 	"github.com/sbalaji09/LogBuilder/log_analytics_engine/internal/handlers"
@@ -20,6 +20,7 @@ import (
 
 type IngestionService struct {
 	storage     *storage.PostgresStorage
+	redisClient *storage.RedisClient
 	authStorage *storage.AuthStorage
 	authHandler *handlers.AuthHandler
 	jwtService  *auth.JWTService
@@ -37,10 +38,16 @@ func NewIngestionService(cfg *config.Config) (*IngestionService, error) {
 	}
 	logger.SetLevel(level)
 
-	// Connect to database
+	// Connect to database (still needed for auth)
 	pgStorage, err := storage.NewPostgresStorage(cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
+	}
+
+	// Connect to Redis
+	redisClient, err := storage.NewRedisClient(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Redis client: %w", err)
 	}
 
 	// Create auth storage
@@ -54,6 +61,7 @@ func NewIngestionService(cfg *config.Config) (*IngestionService, error) {
 
 	return &IngestionService{
 		storage:     pgStorage,
+		redisClient: redisClient,
 		authStorage: authStorage,
 		authHandler: authHandler,
 		jwtService:  jwtService,
@@ -63,21 +71,44 @@ func NewIngestionService(cfg *config.Config) (*IngestionService, error) {
 }
 
 func (s *IngestionService) Close() error {
-	return s.storage.Close()
+	if err := s.storage.Close(); err != nil {
+		s.logger.WithError(err).Error("Failed to close database")
+	}
+	if err := s.redisClient.Close(); err != nil {
+		s.logger.WithError(err).Error("Failed to close Redis")
+	}
+	return nil
 }
 
 // Health check endpoint
 func (s *IngestionService) HealthCheck(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status":    "healthy",
-		"timestamp": time.Now(),
-		"service":   "log-ingestion",
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Check Redis connection
+	redisHealthy := true
+	if err := s.redisClient.GetClient().Ping(ctx).Err(); err != nil {
+		redisHealthy = false
+		s.logger.WithError(err).Warn("Redis health check failed")
+	}
+
+	status := "healthy"
+	statusCode := http.StatusOK
+	if !redisHealthy {
+		status = "degraded"
+		statusCode = http.StatusServiceUnavailable
+	}
+
+	c.JSON(statusCode, gin.H{
+		"status":        status,
+		"timestamp":     time.Now(),
+		"service":       "log-ingestion",
+		"redis_healthy": redisHealthy,
 	})
 }
 
 // Ingest a single log entry (now requires API key)
 func (s *IngestionService) IngestLog(c *gin.Context) {
-	// Get user_id from context (set by API key middleware)
 	userID, exists := c.Get("user_id")
 	if !exists {
 		s.logger.Error("User ID not found in context")
@@ -98,7 +129,6 @@ func (s *IngestionService) IngestLog(c *gin.Context) {
 		return
 	}
 
-	// Validate the request
 	if err := req.Validate(); err != nil {
 		s.logger.WithError(err).Warn("Validation failed")
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -110,13 +140,16 @@ func (s *IngestionService) IngestLog(c *gin.Context) {
 
 	// Convert to log entry
 	logEntry := req.ToLogEntry()
-	logEntry.UserID = userID.(int) // Associate log with user
+	logEntry.UserID = userID.(int)
 
-	// Store in database
-	if err := s.storage.InsertLog(logEntry); err != nil {
-		s.logger.WithError(err).Error("Failed to store log")
+	// Publish to Redis Stream instead of direct database insert
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := s.redisClient.PublishLog(ctx, logEntry); err != nil {
+		s.logger.WithError(err).Error("Failed to publish log to Redis")
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to store log",
+			"error": "Failed to queue log for processing",
 		})
 		return
 	}
@@ -126,18 +159,17 @@ func (s *IngestionService) IngestLog(c *gin.Context) {
 		"source":  logEntry.Source,
 		"level":   logEntry.Level,
 		"service": logEntry.Service,
-	}).Info("Log ingested successfully")
+	}).Info("Log queued successfully")
 
-	c.JSON(http.StatusCreated, gin.H{
-		"status":    "accepted",
-		"log_id":    logEntry.ID,
+	c.JSON(http.StatusAccepted, gin.H{
+		"status":    "queued",
 		"timestamp": logEntry.Timestamp,
+		"message":   "Log accepted and queued for processing",
 	})
 }
 
 // Ingest multiple log entries (now requires API key)
 func (s *IngestionService) IngestBatch(c *gin.Context) {
-	// Get user_id from context
 	userID, exists := c.Get("user_id")
 	if !exists {
 		s.logger.Error("User ID not found in context")
@@ -181,7 +213,7 @@ func (s *IngestionService) IngestBatch(c *gin.Context) {
 			continue
 		}
 		entry := logReq.ToLogEntry()
-		entry.UserID = userID.(int) // Associate each log with user
+		entry.UserID = userID.(int)
 		logEntries = append(logEntries, entry)
 	}
 
@@ -193,11 +225,14 @@ func (s *IngestionService) IngestBatch(c *gin.Context) {
 		return
 	}
 
-	// Store all logs in a transaction
-	if err := s.storage.InsertLogs(logEntries); err != nil {
-		s.logger.WithError(err).Error("Failed to store batch logs")
+	// Publish batch to Redis Stream
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := s.redisClient.PublishLogs(ctx, logEntries); err != nil {
+		s.logger.WithError(err).Error("Failed to publish batch logs to Redis")
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to store logs",
+			"error": "Failed to queue logs for processing",
 		})
 		return
 	}
@@ -205,12 +240,13 @@ func (s *IngestionService) IngestBatch(c *gin.Context) {
 	s.logger.WithFields(logrus.Fields{
 		"user_id": userID,
 		"count":   len(logEntries),
-	}).Info("Batch logs ingested successfully")
+	}).Info("Batch logs queued successfully")
 
-	c.JSON(http.StatusCreated, gin.H{
-		"status":       "accepted",
-		"logs_created": len(logEntries),
-		"timestamp":    time.Now(),
+	c.JSON(http.StatusAccepted, gin.H{
+		"status":      "queued",
+		"logs_queued": len(logEntries),
+		"timestamp":   time.Now(),
+		"message":     "Logs accepted and queued for processing",
 	})
 }
 
@@ -239,6 +275,22 @@ func (s *IngestionService) GetRecentLogs(c *gin.Context) {
 	})
 }
 
+func (s *IngestionService) GetStreamStatus(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	info, err := s.redisClient.GetStreamInfo(ctx)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to get stream info")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get stream status",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, info)
+}
+
 func setupRouter(service *IngestionService) *gin.Engine {
 	if service.config.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -246,7 +298,7 @@ func setupRouter(service *IngestionService) *gin.Engine {
 
 	router := gin.Default()
 
-	// CORS middleware for development
+	// CORS middleware
 	router.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -260,7 +312,7 @@ func setupRouter(service *IngestionService) *gin.Engine {
 		c.Next()
 	})
 
-	// Public routes (no authentication required)
+	// Public routes
 	public := router.Group("/api/v1")
 	{
 		public.GET("/health", service.HealthCheck)
@@ -268,16 +320,17 @@ func setupRouter(service *IngestionService) *gin.Engine {
 		public.POST("/auth/login", service.authHandler.Login)
 	}
 
-	// Protected routes (require JWT token for web interface)
+	// Protected routes (JWT)
 	protected := router.Group("/api/v1")
 	protected.Use(service.authHandler.JWTAuthMiddleware())
 	{
 		protected.POST("/api-keys", service.authHandler.CreateAPIKey)
 		protected.GET("/api-keys", service.authHandler.GetAPIKeys)
 		protected.DELETE("/api-keys/:id", service.authHandler.DeleteAPIKey)
+		protected.GET("/stream/status", service.GetStreamStatus) // NEW
 	}
 
-	// Log ingestion routes (require API key)
+	// Log ingestion routes (API key)
 	logs := router.Group("/api/v1/logs")
 	logs.Use(service.authHandler.APIKeyAuthMiddleware())
 	{
@@ -290,26 +343,21 @@ func setupRouter(service *IngestionService) *gin.Engine {
 }
 
 func main() {
-	// Load configuration
 	cfg := config.Load()
 
-	// Create ingestion service
 	service, err := NewIngestionService(cfg)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to create ingestion service")
 	}
 	defer service.Close()
 
-	// Setup HTTP router
 	router := setupRouter(service)
 
-	// Start server
 	srv := &http.Server{
 		Addr:    ":" + cfg.ServerPort,
 		Handler: router,
 	}
 
-	// Graceful shutdown
 	go func() {
 		service.logger.Infof("Starting ingestion service on port %s", cfg.ServerPort)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -317,7 +365,6 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
