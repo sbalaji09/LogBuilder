@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sbalaji09/LogBuilder/log_analytics_engine/internal/auth"
@@ -14,14 +16,16 @@ import (
 
 type AuthHandler struct {
 	authStorage *storage.AuthStorage
+	redisClient *storage.RedisClient
 	jwtService  *auth.JWTService
 	logger      *logrus.Logger
 }
 
 // creates a new AuthHandler with JWT and logger and other dependencies
-func NewAuthHandler(authStorage *storage.AuthStorage, jwtService *auth.JWTService, logger *logrus.Logger) *AuthHandler {
+func NewAuthHandler(authStorage *storage.AuthStorage, redisClient *storage.RedisClient, jwtService *auth.JWTService, logger *logrus.Logger) *AuthHandler {
 	return &AuthHandler{
 		authStorage: authStorage,
+		redisClient: redisClient,
 		jwtService:  jwtService,
 		logger:      logger,
 	}
@@ -257,6 +261,24 @@ func (h *AuthHandler) DeleteAPIKey(c *gin.Context) {
 		return
 	}
 
+	// Get the API key string before deletion (for cache invalidation)
+	apiKeys, err := h.authStorage.GetUserAPIKeys(userID.(int))
+	if err == nil {
+		for _, key := range apiKeys {
+			if key.ID == keyID {
+				// Invalidate from cache
+				go func(apiKey string) {
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					if err := h.redisClient.InvalidateCachedAPIKey(ctx, apiKey); err != nil {
+						h.logger.WithError(err).Warn("Failed to invalidate cached API key")
+					}
+				}(key.APIKey)
+				break
+			}
+		}
+	}
+
 	if err := h.authStorage.DeactivateAPIKey(keyID, userID.(int)); err != nil {
 		h.logger.WithError(err).Error("Failed to delete API key")
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -331,8 +353,21 @@ func (h *AuthHandler) APIKeyAuthMiddleware() gin.HandlerFunc {
 		}
 
 		apiKey := tokenParts[1]
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
 
-		// Validate API key
+		// Try to get from Redis cache first
+		userID, err := h.redisClient.GetCachedAPIKey(ctx, apiKey)
+		if err == nil {
+			// Cache hit - use cached user ID
+			h.logger.Debug("API key validated from cache")
+			c.Set("user_id", userID)
+			c.Next()
+			return
+		}
+
+		// Cache miss - validate from database
+		h.logger.Debug("API key not in cache, validating from database")
 		user, err := h.authStorage.ValidateAPIKey(apiKey)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
@@ -341,6 +376,15 @@ func (h *AuthHandler) APIKeyAuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+
+		// Cache the API key for 15 minutes
+		go func() {
+			cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cacheCancel()
+			if err := h.redisClient.CacheAPIKey(cacheCtx, apiKey, user.ID, 15*time.Minute); err != nil {
+				h.logger.WithError(err).Warn("Failed to cache API key")
+			}
+		}()
 
 		c.Set("user_id", user.ID)
 		c.Set("username", user.Username)

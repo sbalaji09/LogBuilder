@@ -57,7 +57,7 @@ func NewIngestionService(cfg *config.Config) (*IngestionService, error) {
 	jwtService := auth.NewJWTService(cfg.JWTSecret, cfg.JWTIssuer)
 
 	// Create auth handler
-	authHandler := handlers.NewAuthHandler(authStorage, jwtService, logger)
+	authHandler := handlers.NewAuthHandler(authStorage, redisClient, jwtService, logger)
 
 	return &IngestionService{
 		storage:     pgStorage,

@@ -238,3 +238,45 @@ func (r *RedisClient) GetStreamInfo(ctx context.Context) (map[string]interface{}
 func (r *RedisClient) GetClient() *redis.Client {
 	return r.client
 }
+
+// CacheAPIKey stores an API key with associated user ID in Redis with TTL
+func (r *RedisClient) CacheAPIKey(ctx context.Context, apiKey string, userID int, ttl time.Duration) error {
+	key := fmt.Sprintf("apikey:%s", apiKey)
+	err := r.client.Set(ctx, key, userID, ttl).Err()
+	if err != nil {
+		return fmt.Errorf("failed to cache API key: %w", err)
+	}
+
+	r.logger.WithFields(logrus.Fields{
+		"user_id": userID,
+		"ttl":     ttl,
+	}).Debug("API key cached in Redis")
+
+	return nil
+}
+
+// GetCachedAPIKey retrieves the user ID associated with an API key from cache
+func (r *RedisClient) GetCachedAPIKey(ctx context.Context, apiKey string) (int, error) {
+	key := fmt.Sprintf("apikey:%s", apiKey)
+	result, err := r.client.Get(ctx, key).Int()
+	if err != nil {
+		if err == redis.Nil {
+			return 0, fmt.Errorf("API key not in cache")
+		}
+		return 0, fmt.Errorf("failed to get cached API key: %w", err)
+	}
+
+	return result, nil
+}
+
+// InvalidateCachedAPIKey removes an API key from the cache
+func (r *RedisClient) InvalidateCachedAPIKey(ctx context.Context, apiKey string) error {
+	key := fmt.Sprintf("apikey:%s", apiKey)
+	err := r.client.Del(ctx, key).Err()
+	if err != nil {
+		return fmt.Errorf("failed to invalidate cached API key: %w", err)
+	}
+
+	r.logger.Debug("API key invalidated from cache")
+	return nil
+}
