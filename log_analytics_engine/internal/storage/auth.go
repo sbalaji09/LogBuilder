@@ -266,3 +266,26 @@ func (s *AuthStorage) DeactivateAPIKey(keyID int, userID int) error {
 
 	return nil
 }
+
+func (s *AuthStorage) DeleteAPIKey(keyID int, userID int) error {
+	query := `
+	DELETE FROM api_keys 
+	WHERE id = $1 AND user_id = $2
+	`
+
+	result, err := s.db.Exec(query, keyID, userID)
+	if err != nil {
+		return fmt.Errorf("failed to delete API key: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check affected rows: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("API key not found or not owned by user")
+	}
+
+	return nil
+}

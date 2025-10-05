@@ -279,7 +279,7 @@ func (h *AuthHandler) DeleteAPIKey(c *gin.Context) {
 		}
 	}
 
-	if err := h.authStorage.DeactivateAPIKey(keyID, userID.(int)); err != nil {
+	if err := h.authStorage.DeleteAPIKey(keyID, userID.(int)); err != nil {
 		h.logger.WithError(err).Error("Failed to delete API key")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to delete API key",

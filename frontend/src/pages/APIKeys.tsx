@@ -39,6 +39,16 @@ const APIKeys: React.FC = () => {
       setCreatedKey(response.api_key);
       setNewKeyName('');
       await fetchAPIKeys();
+      
+      // Show success message
+      setError('');
+      
+      // Auto-close modal after 2 seconds
+      setTimeout(() => {
+        setShowCreateModal(false);
+        setCreatedKey(null);
+      }, 2000);
+      
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create API key');
     } finally {
@@ -56,6 +66,19 @@ const APIKeys: React.FC = () => {
       await fetchAPIKeys();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to delete API key');
+    }
+  };
+
+  const handleDeactivateKey = async (id: number, name: string) => {
+    if (!window.confirm(`Are you sure you want to deactivate the API key "${name}"?`)) {
+      return;
+    }
+
+    try {
+      await apiKeysService.deactivateAPIKey(id);
+      await fetchAPIKeys();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to deactivate API key');
     }
   };
 
@@ -132,6 +155,12 @@ const APIKeys: React.FC = () => {
                           )}
                         </div>
                       </div>
+                      <button
+                        onClick={() => handleDeactivateKey(apiKey.id, apiKey.name)}
+                        className="ml-4 px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"
+                      >
+                        Deactivate
+                      </button>
                       <button
                         onClick={() => handleDeleteKey(apiKey.id, apiKey.name)}
                         className="ml-4 px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"

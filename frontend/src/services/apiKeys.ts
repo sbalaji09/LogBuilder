@@ -40,4 +40,8 @@ export const apiKeysService = {
   async deleteAPIKey(id: number): Promise<void> {
     await api.delete(`/api-keys/${id}`);
   },
+
+  async deactivateAPIKey(id: number): Promise<void> {
+    await api.delete(`/api-keys/${id}`);
+  },
 };
