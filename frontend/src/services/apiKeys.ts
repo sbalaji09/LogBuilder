@@ -27,8 +27,14 @@ export const apiKeysService = {
   },
 
   async getAPIKeys(): Promise<APIKey[]> {
-    const response = await api.get<{ api_keys: APIKey[] }>('/api-keys');
-    return response.data.api_keys || [];
+    try {
+      const response = await api.get<{ api_keys: APIKey[] }>('/api-keys');
+      console.log('API Keys response:', response.data); // Add this line
+      return response.data.api_keys || [];
+    } catch (error) {
+      console.error('Error fetching API keys:', error);
+      return [];
+    }
   },
 
   async deleteAPIKey(id: number): Promise<void> {

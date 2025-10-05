@@ -72,11 +72,12 @@ const APIKeys: React.FC = () => {
     return new Date(dateStr).toLocaleString();
   };
 
-  const maskKey = (key: string) => {
+  const maskKey = (key: string | undefined | null) => {
+    if (!key) return 'N/A';
     if (key.length <= 8) return key;
     return `${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
   };
-
+  
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -106,8 +107,13 @@ const APIKeys: React.FC = () => {
           ) : apiKeys.length > 0 ? (
             <div className="bg-white shadow overflow-hidden sm:rounded-md">
               <ul className="divide-y divide-gray-200">
-                {apiKeys.map((apiKey) => (
-                  <li key={apiKey.id} className="px-6 py-4">
+                {apiKeys.map((apiKey) => {
+                  if (!apiKey || !apiKey.key) {
+                    console.warn('Invalid API key data:', apiKey);
+                    return null; // Skip rendering this key
+                  }
+                  return (
+                    <li key={apiKey.id} className="px-6 py-4">
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <h3 className="text-sm font-medium text-gray-900">{apiKey.name}</h3>
@@ -133,7 +139,8 @@ const APIKeys: React.FC = () => {
                       </button>
                     </div>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             </div>
           ) : (
