@@ -29,8 +29,9 @@ const LiveLogs: React.FC = () => {
         limit: 20,
       });
 
+      // If no logs are found and we don't have any logs yet
       if (response.logs.length === 0 && logs.length === 0) {
-        setError('No logs found. Make sure you have logs being sent to your LogBuilder instance.');
+        setError('No logs found. To get started, send logs to your LogBuilder instance.');
         return;
       }
 
@@ -43,13 +44,30 @@ const LiveLogs: React.FC = () => {
         }
         return prevLogs;
       });
-      setError('');
+      
+      // Clear any previous errors if we successfully got logs
+      if (response.logs.length > 0) {
+        setError('');
+      }
     } catch (err: any) {
-      const errorMessage = err.response?.data?.error || 'Failed to fetch logs';
-      setError(errorMessage);
-      // If we get a 404 or similar, it might mean no logs exist yet
-      if (err.response?.status === 404) {
-        setError('No logs found. Make sure you have logs being sent to your LogBuilder instance.');
+      // Only show errors if we're actively streaming
+      if (!isStreaming) return;
+
+      // Handle network errors or server unavailability
+      if (err.message === 'Network Error' || !err.response) {
+        setError('Unable to connect to the log server. Please check your connection and try again.');
+      }
+      // Handle 401/403 - Unauthorized/Forbidden
+      else if (err.response?.status === 401 || err.response?.status === 403) {
+        setError('Authentication required. Please log in to view logs.');
+      }
+      // Handle 500 - Server Error
+      else if (err.response?.status >= 500) {
+        setError('The server encountered an error. Please try again later.');
+      }
+      // Default error message
+      else {
+        setError('Failed to fetch logs. ' + (err.response?.data?.error || 'Please try again later.'));
       }
     }
   };
@@ -57,6 +75,7 @@ const LiveLogs: React.FC = () => {
   const startStreaming = () => {
     setIsStreaming(true);
     setLogs([]);
+    setError(''); // Clear any previous errors
 
     // Fetch initial logs
     fetchRecentLogs();
@@ -69,6 +88,7 @@ const LiveLogs: React.FC = () => {
 
   const stopStreaming = () => {
     setIsStreaming(false);
+    setError(''); // Clear errors when stopping
     if (pollInterval.current) {
       clearInterval(pollInterval.current);
       pollInterval.current = null;
