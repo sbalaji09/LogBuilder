@@ -44,9 +44,12 @@ const LogExplorer: React.FC = () => {
     try {
       setIsLoading(true);
       setError('');
-      const response = await logsService.queryLogs(searchQuery);
+      const response = await logsService.queryLogs({
+        message_contains: searchQuery,
+        limit,
+      });
       setLogs(response.logs);
-      setTotalCount(response.count);
+      setTotalCount(response.total_count);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to search logs');
       setLogs([]);
@@ -215,14 +218,14 @@ const LogExplorer: React.FC = () => {
                           )}
                         </div>
                         <p className="text-sm text-gray-900 font-mono">{log.message}</p>
-                        {log.metadata && Object.keys(log.metadata).length > 0 && (
+                        {log.fields && Object.keys(log.fields).length > 0 && (
                           <div className="mt-2">
                             <details className="text-xs">
                               <summary className="cursor-pointer font-medium text-indigo-600 hover:text-indigo-800">
-                                View Metadata
+                                View Fields
                               </summary>
                               <pre className="mt-2 bg-gray-50 p-3 rounded overflow-x-auto text-xs border border-gray-200">
-                                {JSON.stringify(log.metadata, null, 2)}
+                                {JSON.stringify(log.fields, null, 2)}
                               </pre>
                             </details>
                           </div>

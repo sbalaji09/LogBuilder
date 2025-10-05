@@ -10,7 +10,7 @@ export interface LogStats {
   logs_this_week: number;
   top_sources: { source: string; count: number }[];
   recent_errors: Array<{
-    id: string;
+    id: number;
     message: string;
     timestamp: string;
     source: string;
@@ -20,12 +20,13 @@ export interface LogStats {
 export const statsService = {
   async getStats(): Promise<LogStats> {
     // Since we don't have a dedicated stats endpoint, we'll aggregate from logs
+    // Using POST /logs/query endpoint with different filters
     const [allLogs, errors, warnings, info, debug] = await Promise.all([
-      api.get('/logs', { params: { limit: 1000 } }),
-      api.get('/logs', { params: { level: 'error', limit: 100 } }),
-      api.get('/logs', { params: { level: 'warning', limit: 100 } }),
-      api.get('/logs', { params: { level: 'info', limit: 100 } }),
-      api.get('/logs', { params: { level: 'debug', limit: 100 } }),
+      api.post('/logs/query', { limit: 1000 }),
+      api.post('/logs/query', { level: 'ERROR', limit: 100 }),
+      api.post('/logs/query', { level: 'WARN', limit: 100 }),
+      api.post('/logs/query', { level: 'INFO', limit: 100 }),
+      api.post('/logs/query', { level: 'DEBUG', limit: 100 }),
     ]);
 
     const logs = allLogs.data.logs || [];
@@ -64,11 +65,11 @@ export const statsService = {
       }));
 
     return {
-      total_logs: allLogs.data.total || 0,
-      error_count: errors.data.total || 0,
-      warning_count: warnings.data.total || 0,
-      info_count: info.data.total || 0,
-      debug_count: debug.data.total || 0,
+      total_logs: allLogs.data.total_count || 0,
+      error_count: errors.data.total_count || 0,
+      warning_count: warnings.data.total_count || 0,
+      info_count: info.data.total_count || 0,
+      debug_count: debug.data.total_count || 0,
       logs_today: logsToday,
       logs_this_week: logsThisWeek,
       top_sources: topSources,

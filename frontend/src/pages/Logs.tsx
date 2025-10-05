@@ -21,12 +21,18 @@ const Logs: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await logsService.queryLogs(question);
+      // Parse the question into query parameters
+      const params: any = {
+        message_contains: question,
+        limit: 100,
+      };
+
+      const response = await logsService.queryLogs(params);
       setLogs(response.logs);
       setQueryInfo({
-        query: response.query,
-        count: response.count,
-        executionTime: response.execution_time_ms,
+        query: question,
+        count: response.total_count,
+        executionTime: 0, // Not provided by backend
       });
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to query logs. Please try again.');
@@ -121,14 +127,14 @@ const Logs: React.FC = () => {
                           )}
                         </div>
                         <p className="text-sm text-gray-900">{log.message}</p>
-                        {log.metadata && Object.keys(log.metadata).length > 0 && (
+                        {log.fields && Object.keys(log.fields).length > 0 && (
                           <div className="mt-2">
                             <details className="text-xs text-gray-600">
                               <summary className="cursor-pointer font-medium">
-                                Metadata
+                                Fields
                               </summary>
                               <pre className="mt-2 bg-gray-50 p-2 rounded overflow-x-auto">
-                                {JSON.stringify(log.metadata, null, 2)}
+                                {JSON.stringify(log.fields, null, 2)}
                               </pre>
                             </details>
                           </div>
