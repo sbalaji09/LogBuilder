@@ -69,19 +69,6 @@ const APIKeys: React.FC = () => {
     }
   };
 
-  const handleDeactivateKey = async (id: number, name: string) => {
-    if (!window.confirm(`Are you sure you want to deactivate the API key "${name}"?`)) {
-      return;
-    }
-
-    try {
-      await apiKeysService.deactivateAPIKey(id);
-      await fetchAPIKeys();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to deactivate API key');
-    }
-  };
-
   const closeCreateModal = () => {
     setShowCreateModal(false);
     setCreatedKey(null);
@@ -128,7 +115,7 @@ const APIKeys: React.FC = () => {
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
               <p className="mt-2 text-gray-600">Loading API keys...</p>
             </div>
-          ) : apiKeys.length > 0 ? (
+          ) : apiKeys && apiKeys.length > 0 ? (
             <div className="bg-white shadow overflow-hidden sm:rounded-md">
               <ul className="divide-y divide-gray-200">
                 {apiKeys.map((apiKey) => {
@@ -155,12 +142,6 @@ const APIKeys: React.FC = () => {
                           )}
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleDeactivateKey(apiKey.id, apiKey.name)}
-                        className="ml-4 px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"
-                      >
-                        Deactivate
-                      </button>
                       <button
                         onClick={() => handleDeleteKey(apiKey.id, apiKey.name)}
                         className="ml-4 px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"

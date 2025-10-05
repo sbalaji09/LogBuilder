@@ -102,7 +102,7 @@ const Logs: React.FC = () => {
             </div>
           )}
 
-          {logs.length > 0 ? (
+          {logs && logs.length > 0 ? (
             <div className="bg-white shadow overflow-hidden sm:rounded-md">
               <ul className="divide-y divide-gray-200">
                 {logs.map((log) => (

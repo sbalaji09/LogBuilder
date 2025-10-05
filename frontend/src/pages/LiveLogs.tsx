@@ -29,14 +29,28 @@ const LiveLogs: React.FC = () => {
         limit: 20,
       });
 
+      if (response.logs.length === 0 && logs.length === 0) {
+        setError('No logs found. Make sure you have logs being sent to your LogBuilder instance.');
+        return;
+      }
+
       setLogs((prevLogs) => {
-        const newLogs = [...response.logs, ...prevLogs];
-        // Keep only the most recent logs up to maxLogs
-        return newLogs.slice(0, maxLogs);
+        // Only update if we have new logs
+        if (response.logs.length > 0) {
+          const newLogs = [...response.logs, ...prevLogs];
+          // Keep only the most recent logs up to maxLogs
+          return newLogs.slice(0, maxLogs);
+        }
+        return prevLogs;
       });
       setError('');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to fetch logs');
+      const errorMessage = err.response?.data?.error || 'Failed to fetch logs';
+      setError(errorMessage);
+      // If we get a 404 or similar, it might mean no logs exist yet
+      if (err.response?.status === 404) {
+        setError('No logs found. Make sure you have logs being sent to your LogBuilder instance.');
+      }
     }
   };
 
@@ -231,19 +245,40 @@ const LiveLogs: React.FC = () => {
                 </div>
               ) : (
                 <div className="text-center py-12 text-gray-500">
-                  {isStreaming
-                    ? 'Waiting for logs...'
-                    : 'Click "Start Streaming" to begin monitoring logs in real-time'}
+                  {error ? (
+                    <div className="text-red-500">{error}</div>
+                  ) : isStreaming ? (
+                    <div className="text-gray-500">
+                      Waiting for logs...
+                      <div className="mt-2 text-xs">
+                        This may take a few seconds. If you're not seeing any logs, make sure you have logs being sent to your LogBuilder instance.
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-gray-500">No logs found. To get started:</p>
+                      <ol className="list-decimal list-inside mt-2 text-left max-w-md mx-auto">
+                        <li className="mb-1">Click "Start Streaming" to begin monitoring</li>
+                        <li className="mb-1">Send logs to your LogBuilder instance</li>
+                        <li>Logs will appear here in real-time</li>
+                      </ol>
+                      <button
+                        onClick={startStreaming}
+                        className="mt-4 px-4 py-2 bg-indigo-600 text-white font-medium rounded-md hover:bg-indigo-700"
+                      >
+                        Start Streaming
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {isStreaming && filteredLogs.length > 0 && (
+                <div className="mt-4 text-center text-sm text-gray-400">
+                  Refreshing every 2 seconds...
                 </div>
               )}
             </div>
           </div>
-
-          {isStreaming && (
-            <div className="mt-4 text-center text-sm text-gray-500">
-              Refreshing every 2 seconds...
-            </div>
-          )}
         </div>
       </div>
     </div>
