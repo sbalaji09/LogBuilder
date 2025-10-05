@@ -84,8 +84,8 @@ const LogExplorer: React.FC = () => {
     return new Date(timestamp).toLocaleString();
   };
 
-  const filteredLogs = logs.filter((log) => {
-    if (sourceFilter && !log.source.toLowerCase().includes(sourceFilter.toLowerCase())) {
+  const filteredLogs = (logs || []).filter((log) => {
+    if (sourceFilter && !log.source?.toLowerCase().includes(sourceFilter.toLowerCase())) {
       return false;
     }
     return true;

@@ -391,3 +391,76 @@ func (h *AuthHandler) APIKeyAuthMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// JWTOrAPIKeyAuthMiddleware accepts both JWT tokens and API keys
+func (h *AuthHandler) JWTOrAPIKeyAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Authorization header required",
+			})
+			c.Abort()
+			return
+		}
+
+		// Extract token/key from "Bearer <token>"
+		tokenParts := strings.Split(authHeader, " ")
+		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Invalid authorization format",
+			})
+			c.Abort()
+			return
+		}
+
+		token := tokenParts[1]
+
+		// Try JWT validation first
+		claims, err := h.jwtService.ValidateToken(token)
+		if err == nil {
+			// Valid JWT token
+			c.Set("user_id", claims.UserID)
+			c.Set("username", claims.Username)
+			c.Next()
+			return
+		}
+
+		// JWT validation failed, try API key
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		// Try to get from Redis cache first
+		userID, err := h.redisClient.GetCachedAPIKey(ctx, token)
+		if err == nil {
+			// Cache hit - use cached user ID
+			h.logger.Debug("API key validated from cache")
+			c.Set("user_id", userID)
+			c.Next()
+			return
+		}
+
+		// Cache miss - validate from database
+		user, err := h.authStorage.ValidateAPIKey(token)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Invalid or expired token/API key",
+			})
+			c.Abort()
+			return
+		}
+
+		// Cache the API key for 15 minutes
+		go func() {
+			cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cacheCancel()
+			if err := h.redisClient.CacheAPIKey(cacheCtx, token, user.ID, 15*time.Minute); err != nil {
+				h.logger.WithError(err).Warn("Failed to cache API key")
+			}
+		}()
+
+		c.Set("user_id", user.ID)
+		c.Set("username", user.Username)
+		c.Next()
+	}
+}

@@ -93,8 +93,8 @@ const LiveLogs: React.FC = () => {
     return date.toLocaleTimeString() + '.' + date.getMilliseconds().toString().padStart(3, '0');
   };
 
-  const filteredLogs = logs.filter((log) => {
-    if (levelFilter && log.level.toLowerCase() !== levelFilter.toLowerCase()) {
+  const filteredLogs = (logs || []).filter((log) => {
+    if (levelFilter && log.level?.toLowerCase() !== levelFilter.toLowerCase()) {
       return false;
     }
     return true;

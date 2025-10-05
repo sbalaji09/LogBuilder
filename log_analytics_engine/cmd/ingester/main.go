@@ -332,17 +332,23 @@ func setupRouter(service *IngestionService) *gin.Engine {
 		protected.POST("/api-keys", service.authHandler.CreateAPIKey)
 		protected.GET("/api-keys", service.authHandler.GetAPIKeys)
 		protected.DELETE("/api-keys/:id", service.authHandler.DeleteAPIKey)
-		protected.GET("/stream/status", service.GetStreamStatus) // NEW
+		protected.GET("/stream/status", service.GetStreamStatus)
 	}
 
-	// Log ingestion routes (API key)
-	logs := router.Group("/api/v1/logs")
-	logs.Use(service.authHandler.APIKeyAuthMiddleware())
+	// Log query routes (JWT or API key)
+	logsQuery := router.Group("/api/v1/logs")
+	logsQuery.Use(service.authHandler.JWTOrAPIKeyAuthMiddleware())
 	{
-		logs.POST("/ingest", service.IngestLog)
-		logs.POST("/batch", service.IngestBatch)
-		logs.GET("/recent", service.GetRecentLogs)
-		logs.POST("/query", service.queryHandler.QueryLogs)
+		logsQuery.GET("/recent", service.GetRecentLogs)
+		logsQuery.POST("/query", service.queryHandler.QueryLogs)
+	}
+
+	// Log ingestion routes (API key only for security)
+	logsIngest := router.Group("/api/v1/logs")
+	logsIngest.Use(service.authHandler.APIKeyAuthMiddleware())
+	{
+		logsIngest.POST("/ingest", service.IngestLog)
+		logsIngest.POST("/batch", service.IngestBatch)
 	}
 
 	return router
