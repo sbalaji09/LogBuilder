@@ -19,6 +19,7 @@ const APIKeys: React.FC = () => {
     try {
       setIsLoading(true);
       const keys = await apiKeysService.getAPIKeys();
+      console.log("KEYS", keys);
       setApiKeys(keys);
       setError('');
     } catch (err: any) {
@@ -35,7 +36,7 @@ const APIKeys: React.FC = () => {
     try {
       setIsCreating(true);
       const response = await apiKeysService.createAPIKey(newKeyName);
-      setCreatedKey(response.key);
+      setCreatedKey(response.api_key);
       setNewKeyName('');
       await fetchAPIKeys();
     } catch (err: any) {
@@ -108,7 +109,7 @@ const APIKeys: React.FC = () => {
             <div className="bg-white shadow overflow-hidden sm:rounded-md">
               <ul className="divide-y divide-gray-200">
                 {apiKeys.map((apiKey) => {
-                  if (!apiKey || !apiKey.key) {
+                  if (!apiKey || !apiKey.api_key) {
                     console.warn('Invalid API key data:', apiKey);
                     return null; // Skip rendering this key
                   }
@@ -119,7 +120,7 @@ const APIKeys: React.FC = () => {
                         <h3 className="text-sm font-medium text-gray-900">{apiKey.name}</h3>
                         <div className="mt-1 flex items-center gap-4">
                           <code className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                            {maskKey(apiKey.key)}
+                            {maskKey(apiKey.api_key)}
                           </code>
                           <span className="text-xs text-gray-500">
                             Created: {formatDate(apiKey.created_at)}

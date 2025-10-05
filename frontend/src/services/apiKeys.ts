@@ -3,7 +3,7 @@ import api from './api';
 export interface APIKey {
   id: number;
   user_id: number;
-  key: string;
+  api_key: string;
   name: string;
   last_used_at?: string;
   created_at: string;
@@ -15,7 +15,7 @@ export interface CreateAPIKeyRequest {
 
 export interface CreateAPIKeyResponse {
   id: number;
-  key: string;
+  api_key: string;
   name: string;
   created_at: string;
 }
