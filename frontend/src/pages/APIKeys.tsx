@@ -10,6 +10,7 @@ const APIKeys: React.FC = () => {
   const [newKeyName, setNewKeyName] = useState('');
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [showCopiedToast, setShowCopiedToast] = useState(false);
 
   useEffect(() => {
     fetchAPIKeys();
@@ -71,6 +72,8 @@ const APIKeys: React.FC = () => {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+    setShowCopiedToast(true);
+    setTimeout(() => setShowCopiedToast(false), 2000);
   };
 
   const formatDate = (dateStr: string) => {
@@ -155,6 +158,18 @@ const APIKeys: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Copied to Clipboard Toast */}
+      {showCopiedToast && (
+        <div className="fixed bottom-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span>API key copied to clipboard!</span>
+          </div>
+        </div>
+      )}
 
       {/* Create API Key Modal */}
       {showCreateModal && (
