@@ -40,3 +40,5 @@ log_analytics_engine/vendor/
 # OS
 .DS_Store
 Thumbs.db
+
+.claude/
