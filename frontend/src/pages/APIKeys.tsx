@@ -39,15 +39,9 @@ const APIKeys: React.FC = () => {
       setCreatedKey(response.api_key);
       setNewKeyName('');
       await fetchAPIKeys();
-      
+
       // Show success message
       setError('');
-      
-      // Auto-close modal after 2 seconds
-      setTimeout(() => {
-        setShowCreateModal(false);
-        setCreatedKey(null);
-      }, 2000);
       
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to create API key');
