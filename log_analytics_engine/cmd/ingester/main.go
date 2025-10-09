@@ -303,8 +303,6 @@ func setupRouter(service *IngestionService) *gin.Engine {
 
 	router := gin.Default()
 
-	router.Static("/", "./static")
-
 	// CORS middleware
 	router.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
@@ -352,6 +350,9 @@ func setupRouter(service *IngestionService) *gin.Engine {
 		logsIngest.POST("/ingest", service.IngestLog)
 		logsIngest.POST("/batch", service.IngestBatch)
 	}
+
+	// Serve static files (React app) - MUST be last to avoid conflicts
+	router.Static("/", "./static")
 
 	return router
 }
