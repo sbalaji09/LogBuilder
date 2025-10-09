@@ -12,6 +12,9 @@ const Logs: React.FC = () => {
     count: number;
     executionTime: number;
   } | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [currentQueryParams, setCurrentQueryParams] = useState<any>(null);
+  const [deleteSuccess, setDeleteSuccess] = useState<string>('');
 
   const parseNaturalLanguageQuery = (question: string): any => {
     const params: any = { limit: 100 };
@@ -72,11 +75,13 @@ const Logs: React.FC = () => {
     if (!question.trim()) return;
 
     setError('');
+    setDeleteSuccess('');
     setIsLoading(true);
 
     try {
       // Parse natural language query into parameters
       const params = parseNaturalLanguageQuery(question);
+      setCurrentQueryParams(params);
 
       const response = await logsService.queryLogs(params);
       setLogs(response.logs);
@@ -92,6 +97,45 @@ const Logs: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDeleteClick = () => {
+    if (!queryInfo || queryInfo.count === 0) {
+      setError('No logs to delete. Please run a query first.');
+      return;
+    }
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    setShowDeleteConfirm(false);
+    setError('');
+    setDeleteSuccess('');
+    setIsLoading(true);
+
+    try {
+      // Remove limit from params for deletion to delete all matching logs
+      const deleteParams = { ...currentQueryParams };
+      delete deleteParams.limit;
+      delete deleteParams.offset;
+
+      const response = await logsService.deleteLogs(deleteParams);
+      setDeleteSuccess(`Successfully deleted ${response.deleted_count} log(s)`);
+
+      // Clear the current query results
+      setLogs([]);
+      setQueryInfo(null);
+      setQuestion('');
+      setCurrentQueryParams(null);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to delete logs. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteConfirm(false);
   };
 
   const getLevelColor = (level: string) => {
@@ -144,11 +188,54 @@ const Logs: React.FC = () => {
             </div>
           )}
 
-          {queryInfo && (
+          {deleteSuccess && (
             <div className="mb-4 rounded-md bg-green-50 p-4">
-              <div className="text-sm text-green-800">
-                <strong>Query:</strong> {queryInfo.query} | <strong>Results:</strong>{' '}
-                {queryInfo.count} | <strong>Time:</strong> {queryInfo.executionTime}ms
+              <div className="text-sm text-green-800">{deleteSuccess}</div>
+            </div>
+          )}
+
+          {queryInfo && (
+            <div className="mb-4 rounded-md bg-blue-50 p-4">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-blue-800">
+                  <strong>Query:</strong> {queryInfo.query} | <strong>Results:</strong>{' '}
+                  {queryInfo.count} logs found
+                </div>
+                <button
+                  onClick={handleDeleteClick}
+                  disabled={isLoading}
+                  className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:bg-red-400"
+                >
+                  Clear These Logs
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Delete Confirmation Modal */}
+          {showDeleteConfirm && (
+            <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
+              <div className="relative bg-white rounded-lg shadow-xl p-6 m-4 max-w-md">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">Confirm Deletion</h3>
+                <p className="text-sm text-gray-700 mb-6">
+                  Are you sure you want to delete <strong>{queryInfo?.count} log(s)</strong> matching this query?
+                  <br />
+                  <span className="text-red-600 font-medium">This action cannot be undone.</span>
+                </p>
+                <div className="flex gap-4 justify-end">
+                  <button
+                    onClick={handleCancelDelete}
+                    className="px-4 py-2 bg-gray-200 text-gray-800 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmDelete}
+                    className="px-4 py-2 bg-red-600 text-white font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    Yes, Delete
+                  </button>
+                </div>
               </div>
             </div>
           )}

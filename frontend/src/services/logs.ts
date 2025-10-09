@@ -71,4 +71,9 @@ export const logsService = {
     const response = await api.get<{ logs: Log[]; count: number }>('/logs/recent');
     return response.data.logs;
   },
+
+  async deleteLogs(params: QueryRequest): Promise<{ message: string; deleted_count: number }> {
+    const response = await api.post<{ message: string; deleted_count: number }>('/logs/delete', params);
+    return response.data;
+  },
 };

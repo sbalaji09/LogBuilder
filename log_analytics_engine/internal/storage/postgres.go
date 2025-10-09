@@ -324,3 +324,23 @@ func (s *PostgresStorage) CountLogs(userID int, whereClause string, args []inter
 
 	return count, nil
 }
+
+// DeleteLogs deletes logs matching the query
+func (s *PostgresStorage) DeleteLogs(userID int, whereClause string, args []interface{}) (int, error) {
+	query := fmt.Sprintf(`
+        DELETE FROM logs
+        WHERE %s
+    `, whereClause)
+
+	result, err := s.db.Exec(query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete logs: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return int(rowsAffected), nil
+}

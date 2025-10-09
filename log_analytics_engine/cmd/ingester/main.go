@@ -341,6 +341,7 @@ func setupRouter(service *IngestionService) *gin.Engine {
 	{
 		logsQuery.GET("/recent", service.GetRecentLogs)
 		logsQuery.POST("/query", service.queryHandler.QueryLogs)
+		logsQuery.POST("/delete", service.queryHandler.DeleteLogs)
 	}
 
 	// Log ingestion routes (API key only for security)
