@@ -13,6 +13,60 @@ const Logs: React.FC = () => {
     executionTime: number;
   } | null>(null);
 
+  const parseNaturalLanguageQuery = (question: string): any => {
+    const params: any = { limit: 100 };
+    const lowerQuestion = question.toLowerCase();
+
+    // Time range parsing
+    if (lowerQuestion.includes('today')) {
+      params.last_days = 1;
+    } else if (lowerQuestion.includes('yesterday')) {
+      params.last_days = 2;
+    } else if (lowerQuestion.match(/last (\d+) days?/)) {
+      const match = lowerQuestion.match(/last (\d+) days?/);
+      params.last_days = parseInt(match![1]);
+    } else if (lowerQuestion.match(/last (\d+) hours?/)) {
+      const match = lowerQuestion.match(/last (\d+) hours?/);
+      params.last_hours = parseInt(match![1]);
+    } else if (lowerQuestion.match(/last (\d+) minutes?/)) {
+      const match = lowerQuestion.match(/last (\d+) minutes?/);
+      params.last_minutes = parseInt(match![1]);
+    } else if (lowerQuestion.includes('this week')) {
+      params.last_days = 7;
+    } else if (lowerQuestion.includes('this month')) {
+      params.last_days = 30;
+    }
+
+    // Log level parsing
+    if (lowerQuestion.includes('error')) {
+      params.level = 'ERROR';
+    } else if (lowerQuestion.includes('warning') || lowerQuestion.includes('warn')) {
+      params.level = 'WARN';
+    } else if (lowerQuestion.includes('info')) {
+      params.level = 'INFO';
+    } else if (lowerQuestion.includes('debug')) {
+      params.level = 'DEBUG';
+    }
+
+    // Extract quoted text for message search
+    const quotedMatch = question.match(/"([^"]+)"/);
+    if (quotedMatch) {
+      params.message_contains = quotedMatch[1];
+    } else {
+      // If no specific filters were found, search in message
+      const skipWords = ['show', 'me', 'all', 'logs', 'from', 'get', 'find', 'search', 'for', 'the'];
+      const words = question.toLowerCase().split(' ').filter(word =>
+        !skipWords.includes(word) &&
+        !word.match(/today|yesterday|error|warning|warn|info|debug|last|days?|hours?|minutes?|week|month/)
+      );
+      if (words.length > 0) {
+        params.message_contains = words.join(' ');
+      }
+    }
+
+    return params;
+  };
+
   const handleQuery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
@@ -21,11 +75,8 @@ const Logs: React.FC = () => {
     setIsLoading(true);
 
     try {
-      // Parse the question into query parameters
-      const params: any = {
-        message_contains: question,
-        limit: 100,
-      };
+      // Parse natural language query into parameters
+      const params = parseNaturalLanguageQuery(question);
 
       const response = await logsService.queryLogs(params);
       setLogs(response.logs);
