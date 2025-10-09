@@ -351,8 +351,8 @@ func setupRouter(service *IngestionService) *gin.Engine {
 		logsIngest.POST("/batch", service.IngestBatch)
 	}
 
-	// Serve static files (React app) - MUST be last to avoid conflicts
-	router.Static("/", "./static")
+	// Serve static files (React app) as fallback for unmatched routes
+	router.NoRoute(gin.WrapH(http.FileServer(http.Dir("./static"))))
 
 	return router
 }
