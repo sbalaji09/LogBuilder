@@ -19,7 +19,11 @@ const Login: React.FC = () => {
       await login({ username, password });
       navigate('/logs');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.');
+      if (err.response?.status === 401) {
+        setError('Invalid username or password. Please try again.');
+      } else {
+        setError(err.response?.data?.error || 'Login failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
