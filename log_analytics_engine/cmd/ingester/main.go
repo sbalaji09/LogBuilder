@@ -303,6 +303,8 @@ func setupRouter(service *IngestionService) *gin.Engine {
 
 	router := gin.Default()
 
+	router.Static("/", "./static")
+
 	// CORS middleware
 	router.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
@@ -318,11 +320,11 @@ func setupRouter(service *IngestionService) *gin.Engine {
 	})
 
 	// Public routes
-	public := router.Group("/api/v1")
+	api := router.Group("/api/v1")
 	{
-		public.GET("/health", service.HealthCheck)
-		public.POST("/auth/register", service.authHandler.Register)
-		public.POST("/auth/login", service.authHandler.Login)
+		api.GET("/health", service.HealthCheck)
+		api.POST("/auth/register", service.authHandler.Register)
+		api.POST("/auth/login", service.authHandler.Login)
 	}
 
 	// Protected routes (JWT)
