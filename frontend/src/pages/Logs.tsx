@@ -17,14 +17,25 @@ const Logs: React.FC = () => {
   const [deleteSuccess, setDeleteSuccess] = useState<string>('');
 
   const parseNaturalLanguageQuery = (question: string): any => {
-    const params: any = { limit: 100 };
+    const params: any = { limit: 1000 };
     const lowerQuestion = question.toLowerCase();
 
     // Time range parsing
     if (lowerQuestion.includes('today')) {
-      params.last_days = 1;
+      // Set to beginning of today (00:00:00)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      params.start_time = today.toISOString();
     } else if (lowerQuestion.includes('yesterday')) {
-      params.last_days = 2;
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
+      params.start_time = yesterday.toISOString();
+
+      const endOfYesterday = new Date();
+      endOfYesterday.setDate(endOfYesterday.getDate() - 1);
+      endOfYesterday.setHours(23, 59, 59, 999);
+      params.end_time = endOfYesterday.toISOString();
     } else if (lowerQuestion.match(/last (\d+) days?/)) {
       const match = lowerQuestion.match(/last (\d+) days?/);
       params.last_days = parseInt(match![1]);
@@ -57,7 +68,7 @@ const Logs: React.FC = () => {
       params.message_contains = quotedMatch[1];
     } else {
       // If no specific filters were found, search in message
-      const skipWords = ['show', 'me', 'all', 'logs', 'from', 'get', 'find', 'search', 'for', 'the'];
+      const skipWords = ['show', 'me', 'all', 'logs', 'from', 'get', 'find', 'search', 'for', 'the', 'delete', 'clear', 'remove'];
       const words = question.toLowerCase().split(' ').filter(word =>
         !skipWords.includes(word) &&
         !word.match(/today|yesterday|error|warning|warn|info|debug|last|days?|hours?|minutes?|week|month/)
